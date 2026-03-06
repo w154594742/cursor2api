@@ -38,6 +38,10 @@ export function getConfig(): AppConfig {
                     model: yaml.vision.model || 'gpt-4o-mini',
                 };
             }
+            // 从 config.yaml 加载 API Keys
+            if (yaml.api_keys && Array.isArray(yaml.api_keys)) {
+                config.apiKeys = yaml.api_keys.filter((k: unknown) => k && typeof k === 'string');
+            }
         } catch (e) {
             console.warn('[Config] 读取 config.yaml 失败:', e);
         }
@@ -57,6 +61,14 @@ export function getConfig(): AppConfig {
         } catch (e) {
             console.warn('[Config] 解析 FP 环境变量失败:', e);
         }
+    }
+
+    // 环境变量覆盖 API Keys（逗号分隔，优先级更高）
+    if (process.env.API_KEYS) {
+        config.apiKeys = process.env.API_KEYS
+            .split(',')
+            .map(k => k.trim())
+            .filter(k => k.length > 0);
     }
 
     return config;

@@ -10,6 +10,7 @@ import express from 'express';
 import { getConfig } from './config.js';
 import { handleMessages, listModels, countTokens } from './handler.js';
 import { handleOpenAIChatCompletions } from './openai-handler.js';
+import { validateApiKey } from './middleware/auth.js';
 
 const app = express();
 const config = getConfig();
@@ -31,19 +32,19 @@ app.use((_req, res, next) => {
 
 // ==================== 路由 ====================
 
-// Anthropic Messages API
-app.post('/v1/messages', handleMessages);
-app.post('/messages', handleMessages);
+// Anthropic Messages API（需要验证）
+app.post('/v1/messages', validateApiKey, handleMessages);
+app.post('/messages', validateApiKey, handleMessages);
 
-// OpenAI Chat Completions API（兼容）
-app.post('/v1/chat/completions', handleOpenAIChatCompletions);
-app.post('/chat/completions', handleOpenAIChatCompletions);
+// OpenAI Chat Completions API（需要验证）
+app.post('/v1/chat/completions', validateApiKey, handleOpenAIChatCompletions);
+app.post('/chat/completions', validateApiKey, handleOpenAIChatCompletions);
 
-// Token 计数
-app.post('/v1/messages/count_tokens', countTokens);
-app.post('/messages/count_tokens', countTokens);
+// Token 计数（需要验证）
+app.post('/v1/messages/count_tokens', validateApiKey, countTokens);
+app.post('/messages/count_tokens', validateApiKey, countTokens);
 
-// OpenAI 兼容模型列表
+// OpenAI 兼容模型列表（公开端点，不需要验证）
 app.get('/v1/models', listModels);
 
 // 健康检查

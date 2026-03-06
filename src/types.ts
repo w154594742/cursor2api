@@ -93,6 +93,7 @@ export interface AppConfig {
     timeout: number;
     proxy?: string;
     cursorModel: string;
+    apiKeys?: string[];  // API Key 列表，未配置则不启用验证
     vision?: {
         enabled: boolean;
         mode: 'ocr' | 'api';

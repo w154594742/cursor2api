@@ -29,3 +29,10 @@ vision:
   # base_url: "https://openrouter.ai/api/v1/chat/completions"
   # api_key: "sk-or-v1-..."
   # model: "meta-llama/llama-3.2-11b-vision-instruct:free"
+
+# API Key 验证配置（可选）
+# 如果配置了 API Keys，则所有 API 请求都需要在 Authorization 头中提供有效的 Bearer token
+# 如果不配置此项，则不启用验证（向后兼容）
+# api_keys:
+#   - "sk-cursor2api-your-secret-key-1"
+#   - "sk-cursor2api-your-secret-key-2"
