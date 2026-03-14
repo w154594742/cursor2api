@@ -140,9 +140,10 @@ export async function convertToCursorRequest(req: AnthropicRequest): Promise<Cur
         }
     }
 
-    // ★ Thinking 提示词注入：引导模型使用 <thinking> 标签进行隐式推理
-    // 仅在非工具模式或已有系统提示词时注入，工具模式下指令已足够多
-    if (config.enableThinking && combinedSystem) {
+    // ★ Thinking 提示词注入：仅在非工具模式下启用
+    // 工具模式下 Cursor API 的 output 预算很小（~1800 chars），thinking 会吃掉大部分预算
+    // 导致实际工具调用（Edit/Write 等）被截断，是截断问题的根因
+    if (config.enableThinking && !hasTools && combinedSystem) {
         combinedSystem = combinedSystem + '\n\n' + THINKING_HINT;
     }
 
