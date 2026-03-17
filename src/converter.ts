@@ -957,6 +957,22 @@ function shortId(): string {
     return uuidv4().replace(/-/g, '').substring(0, 16);
 }
 
+function normalizeFileUrlToLocalPath(url: string): string {
+    if (!url.startsWith('file:///')) return url;
+
+    const rawPath = url.slice('file:///'.length);
+    let decodedPath = rawPath;
+    try {
+        decodedPath = decodeURIComponent(rawPath);
+    } catch {
+        // 忽略非法编码，保留原始路径
+    }
+
+    return /^[A-Za-z]:[\\/]/.test(decodedPath)
+        ? decodedPath
+        : '/' + decodedPath;
+}
+
 // ==================== 图片预处理 ====================
 
 /**
@@ -991,6 +1007,15 @@ async function preprocessImages(messages: AnthropicMessage[]): Promise<void> {
                 console.log(`[Converter] 🔄 归一化 Anthropic URL 图片: source.url → source.data`);
             }
 
+            // ★ file:// 本地文件 URL → 归一化为系统路径，复用后续本地文件读取逻辑
+            if (block.source?.type === 'url' && typeof block.source.data === 'string' && block.source.data.startsWith('file:///')) {
+                block.source.data = normalizeFileUrlToLocalPath(block.source.data);
+                if (!block.source.media_type) {
+                    block.source.media_type = guessMediaType(block.source.data);
+                }
+                console.log(`[Converter] 🔄 修正 file:// URL → 本地路径: ${block.source.data.substring(0, 120)}`);
+            }
+
             // ★ 兜底：source.data 是完整 data: URI 但 type 仍标为 'url'
             if (block.source?.type === 'url' && block.source.data?.startsWith('data:')) {
                 const match = block.source.data.match(/^data:([^;]+);base64,(.+)$/);
@@ -1011,7 +1036,8 @@ async function preprocessImages(messages: AnthropicMessage[]): Promise<void> {
     //   B) content 是数组，但 text block 中嵌入了路径
     // 支持格式：
     //   - 本地文件路径: /Users/.../file_362---eb90f5a2.jpg（含连字符、UUID）
-    //   - file:// URL: file:///Users/.../file.jpg
+    //   - Windows 本地路径: C:\Users\...\file.jpg / C:/Users/.../file.jpg
+    //   - file:// URL: file:///Users/.../file.jpg / file:///C:/Users/.../file.jpg
     //   - HTTP(S) URL 以图片后缀结尾
     //
     // 使用 [^\s"')\]] 匹配路径中任意非空白/非引号字符（包括 -、UUID、中文等）
@@ -1020,21 +1046,31 @@ async function preprocessImages(messages: AnthropicMessage[]): Promise<void> {
     /** 从文本中提取所有图片 URL/路径 */
     function extractImageUrlsFromText(text: string): string[] {
         const urls: string[] = [];
-        // file:// URLs → /path
+        // file:// URLs → 本地路径
         const fileRe = /file:\/\/\/([^\s"')\]]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))/gi;
         for (const m of text.matchAll(fileRe)) {
-            urls.push('/' + m[1]);
+            const normalizedPath = normalizeFileUrlToLocalPath(`file:///${m[1]}`);
+            urls.push(normalizedPath);
         }
         // HTTP(S) URLs
         const httpRe = /(https?:\/\/[^\s"')\]]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)(?:\?[^\s"')\]]*)?)/gi;
         for (const m of text.matchAll(httpRe)) {
             if (!urls.includes(m[1])) urls.push(m[1]);
         }
-        // 本地绝对路径 (/开头，支持 UUID、连字符等)
-        const localRe = /(?:^|[\s"'(\[,:])(\/[^\s"')\]]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))/gi;
+        // 本地绝对路径：Unix /path 或 Windows C:\path / C:/path，排除协议相对 URL（//example.com/a.jpg）
+        const localRe = /(?:^|[\s"'(\[,:])((?:\/(?!\/)|[A-Za-z]:[\\/])[^\s"')\]]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))/gi;
         for (const m of text.matchAll(localRe)) {
-            const path = m[1].trim();
-            if (!urls.includes(path)) urls.push(path);
+            const localPath = m[1].trim();
+            const fullMatch = m[0];
+            const matchStart = m.index ?? 0;
+            const pathOffsetInMatch = fullMatch.lastIndexOf(localPath);
+            const pathStart = matchStart + Math.max(pathOffsetInMatch, 0);
+            const beforePath = text.slice(Math.max(0, pathStart - 12), pathStart);
+
+            // 避免 file:///C:/foo.jpg 中的 /foo.jpg 被再次当作 Unix 路径提取
+            if (/file:\/\/\/[A-Za-z]:$/i.test(beforePath)) continue;
+            if (localPath.startsWith('//')) continue;
+            if (!urls.includes(localPath)) urls.push(localPath);
         }
         return [...new Set(urls)];
     }
@@ -1129,8 +1165,8 @@ async function preprocessImages(messages: AnthropicMessage[]): Promise<void> {
                 if (block.source?.type === 'url' && block.source.data && !block.source.data.startsWith('data:')) {
                     const imageUrl = block.source.data;
 
-                    // ★ 本地文件路径检测：/开头 或 ~/ 开头 或 Windows 绝对路径
-                    const isLocalPath = /^(\/|~\/|[A-Za-z]:\\)/.test(imageUrl);
+                    // ★ 本地文件路径检测：/开头 或 ~/ 开头 或 Windows 绝对路径（支持 \ 和 /）
+                    const isLocalPath = /^(\/|~\/|[A-Za-z]:[\\/])/.test(imageUrl);
 
                     if (isLocalPath) {
                         localImages++;

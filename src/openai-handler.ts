@@ -50,6 +50,43 @@ function toolCallId(): string {
     return 'call_' + uuidv4().replace(/-/g, '').substring(0, 24);
 }
 
+class OpenAIRequestError extends Error {
+    status: number;
+    type: string;
+    code: string;
+
+    constructor(message: string, status = 400, type = 'invalid_request_error', code = 'invalid_request') {
+        super(message);
+        this.name = 'OpenAIRequestError';
+        this.status = status;
+        this.type = type;
+        this.code = code;
+    }
+}
+
+function stringifyUnknownContent(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+        return String(value);
+    }
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function unsupportedImageFileError(fileId?: string): OpenAIRequestError {
+    const suffix = fileId ? ` (file_id: ${fileId})` : '';
+    return new OpenAIRequestError(
+        `Unsupported content part: image_file${suffix}. This proxy does not support OpenAI Files API image references. Please send the image as image_url, input_image, data URI, or a local file path instead.`,
+        400,
+        'invalid_request_error',
+        'unsupported_content_part'
+    );
+}
+
 // ==================== 请求转换：OpenAI → Anthropic ====================
 
 /**
@@ -238,6 +275,7 @@ function toBlocks(content: string | AnthropicContentBlock[]): AnthropicContentBl
 /**
  * 从 OpenAI 消息中提取文本或多模态内容块
  * 处理多种客户端格式：
+ *   - 文本块: { type: 'text'|'input_text', text: '...' }
  *   - OpenAI 标准: { type: 'image_url', image_url: { url: '...' } }
  *   - Anthropic 透传: { type: 'image', source: { type: 'url', url: '...' } }
  *   - 部分客户端: { type: 'input_image', image_url: { url: '...' } }
@@ -248,7 +286,7 @@ function extractOpenAIContentBlocks(msg: OpenAIMessage): string | AnthropicConte
     if (Array.isArray(msg.content)) {
         const blocks: AnthropicContentBlock[] = [];
         for (const p of msg.content as (OpenAIContentPart | Record<string, unknown>)[]) {
-            if (p.type === 'text' && (p as OpenAIContentPart).text) {
+            if ((p.type === 'text' || p.type === 'input_text') && (p as OpenAIContentPart).text) {
                 blocks.push({ type: 'text', text: (p as OpenAIContentPart).text! });
             } else if (p.type === 'image_url' && (p as OpenAIContentPart).image_url?.url) {
                 const url = (p as OpenAIContentPart).image_url!.url;
@@ -310,11 +348,9 @@ function extractOpenAIContentBlocks(msg: OpenAIMessage): string | AnthropicConte
                     });
                 }
             } else if (p.type === 'image_file' && (p as any).image_file) {
-                // ★ Assistants API 格式: { type: 'image_file', image_file: { file_id: '...', detail?: '...' } }
-                // file_id 无法直接使用，但记录下来以便调试
-                const fileId = (p as any).image_file.file_id;
-                console.log(`[OpenAI] ⚠️ 收到 image_file 格式 (file_id: ${fileId})，此格式需要 Files API 支持`);
-                blocks.push({ type: 'text', text: `[Image file reference: file_id=${fileId}. This format requires Files API support which is not available.]` });
+                const fileId = (p as any).image_file.file_id as string | undefined;
+                console.log(`[OpenAI] ⚠️ 收到不支持的 image_file 格式 (file_id: ${fileId || 'unknown'})`);
+                throw unsupportedImageFileError(fileId);
             } else if ((p.type === 'image_url' || p.type === 'input_image') && (p as any).url) {
                 // ★ 扁平 URL 格式：某些客户端将 url 直接放在顶层而非 image_url.url
                 const url = (p as any).url as string;
@@ -368,7 +404,7 @@ function extractOpenAIContentBlocks(msg: OpenAIMessage): string | AnthropicConte
         }
         return blocks.length > 0 ? blocks : '';
     }
-    return String(msg.content);
+    return stringifyUnknownContent(msg.content);
 }
 
 /**
@@ -459,11 +495,14 @@ export async function handleOpenAIChatCompletions(req: Request, res: Response): 
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         log.fail(message);
-        res.status(500).json({
+        const status = err instanceof OpenAIRequestError ? err.status : 500;
+        const type = err instanceof OpenAIRequestError ? err.type : 'server_error';
+        const code = err instanceof OpenAIRequestError ? err.code : 'internal_error';
+        res.status(status).json({
             error: {
                 message,
-                type: 'server_error',
-                code: 'internal_error',
+                type,
+                code,
             },
         });
     }
@@ -1157,8 +1196,11 @@ export async function handleOpenAIResponses(req: Request, res: Response): Promis
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[OpenAI] /v1/responses 处理失败:`, message);
-        res.status(500).json({
-            error: { message, type: 'server_error', code: 'internal_error' },
+        const status = err instanceof OpenAIRequestError ? err.status : 500;
+        const type = err instanceof OpenAIRequestError ? err.type : 'server_error';
+        const code = err instanceof OpenAIRequestError ? err.code : 'internal_error';
+        res.status(status).json({
+            error: { message, type, code },
         });
     }
 }
@@ -1628,26 +1670,29 @@ export function responsesToChatCompletions(body: Record<string, unknown>): OpenA
             if (item.type === 'function_call_output') {
                 messages.push({
                     role: 'tool',
-                    content: (item.output as string) || '',
+                    content: stringifyUnknownContent(item.output),
                     tool_call_id: (item.call_id as string) || '',
                 });
                 continue;
             }
             const role = (item.role as string) || 'user';
             if (role === 'system' || role === 'developer') {
-                const text = typeof item.content === 'string'
-                    ? item.content
-                    : Array.isArray(item.content)
-                        ? (item.content as Array<Record<string, unknown>>).filter(b => b.type === 'input_text').map(b => b.text as string).join('\n')
-                        : String(item.content || '');
+                const text = extractOpenAIContent({
+                    role: 'system',
+                    content: (item.content as string | OpenAIContentPart[] | null) ?? null,
+                } as OpenAIMessage);
                 messages.push({ role: 'system', content: text });
             } else if (role === 'user') {
-                const content = typeof item.content === 'string'
-                    ? item.content
-                    : Array.isArray(item.content)
-                        ? (item.content as Array<Record<string, unknown>>).filter(b => b.type === 'input_text').map(b => b.text as string).join('\n')
-                        : String(item.content || '');
-                messages.push({ role: 'user', content });
+                const rawContent = (item.content as string | OpenAIContentPart[] | null) ?? null;
+                const normalizedContent = typeof rawContent === 'string'
+                    ? rawContent
+                    : Array.isArray(rawContent) && rawContent.every(b => b.type === 'input_text')
+                        ? rawContent.map(b => b.text || '').join('\n')
+                        : rawContent;
+                messages.push({
+                    role: 'user',
+                    content: normalizedContent || '',
+                });
             } else if (role === 'assistant') {
                 const blocks = Array.isArray(item.content) ? item.content as Array<Record<string, unknown>> : [];
                 const text = blocks.filter(b => b.type === 'output_text').map(b => b.text as string).join('\n');

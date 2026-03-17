@@ -8,6 +8,7 @@ export async function applyVisionInterceptor(messages: AnthropicMessage[]): Prom
     if (!config.vision?.enabled) return;
 
     for (const msg of messages) {
+        if (msg.role !== 'user') continue;
         if (!Array.isArray(msg.content)) continue;
 
         let hasImages = false;
