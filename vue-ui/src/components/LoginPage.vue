@@ -63,34 +63,39 @@ async function submit() {
 .login-overlay {
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #e0e7ff 0%, #f0f4f8 30%, #fdf2f8 70%, #f0f4f8 100%);
+  background: linear-gradient(135deg, #e8eeff 0%, #f0f4f8 40%, #eef2f8 70%, #f0f4f8 100%);
 }
 [data-theme="dark"] .login-overlay {
-  background: linear-gradient(135deg, #0f1117 0%, #16181f 50%, #0f1117 100%);
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(88,166,255,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 100%, rgba(57,208,232,0.08) 0%, transparent 55%),
+    #0d1117;
 }
 
 .login-card {
-  width: 400px; padding: 44px;
-  background: rgba(255,255,255,.85);
-  border: 1px solid rgba(226,232,240,.8);
+  width: 380px; padding: 44px;
+  background: rgba(255,255,255,.9);
+  border: 1px solid rgba(226,232,240,.9);
   border-radius: 20px;
-  backdrop-filter: blur(24px);
-  box-shadow: 0 20px 40px rgba(0,0,0,.06), 0 8px 16px rgba(0,0,0,.04);
+  backdrop-filter: blur(32px);
+  box-shadow: 0 24px 48px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.5) inset;
 }
 [data-theme="dark"] .login-card {
-  background: rgba(30,33,48,.85);
-  border-color: rgba(255,255,255,.08);
-  box-shadow: 0 20px 40px rgba(0,0,0,.4);
+  background: rgba(22,27,39,.85);
+  border: 1px solid rgba(88,166,255,0.15);
+  box-shadow: 0 24px 64px rgba(0,0,0,.6), 0 0 0 1px rgba(88,166,255,0.06) inset;
+  backdrop-filter: blur(32px);
 }
 
 .logo { text-align: center; margin-bottom: 32px; }
 .logo h1 {
-  font-size: 24px; font-weight: 700;
+  font-size: 22px; font-weight: 700;
   background: linear-gradient(135deg, #6366f1, #3b82f6, #0891b2);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.logo p { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.logo h1 .ic { -webkit-text-fill-color: initial; }
+.logo p { font-size: 12px; color: var(--text-muted); margin-top: 8px; letter-spacing: .3px; }
 
 .field { margin-bottom: 22px; }
 .field label {
@@ -129,6 +134,8 @@ async function submit() {
   text-align: center;
 }
 [data-theme="dark"] .err {
-  background: #2a0a0a; border-color: #7f1d1d; color: #fca5a5;
+  background: color-mix(in srgb, var(--red) 8%, var(--bg1));
+  border-color: color-mix(in srgb, var(--red) 25%, transparent);
+  color: var(--red);
 }
 </style>

@@ -9,6 +9,7 @@
           class="si"
           placeholder="关键字搜索… (Ctrl+K)"
         />
+        <button v-if="logsStore.search" class="si-clear" @click="logsStore.search = ''">✕</button>
       </div>
     </div>
     <!-- 时间筛选 -->
@@ -34,7 +35,7 @@
       </button>
     </div>
     <!-- 请求列表 -->
-    <div class="rlist">
+    <div class="rlist" ref="rlistEl">
       <div v-if="!logsStore.filteredReqs.length" class="empty">
         <div class="ic">📭</div><p>暂无请求</p>
       </div>
@@ -78,15 +79,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue';
 import { useLogsStore } from '../stores/logs';
 
 const searchInput = ref<HTMLInputElement | null>(null);
+const rlistEl = ref<HTMLElement | null>(null);
 
 function onKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault();
     searchInput.value?.focus();
+    return;
+  }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    // 搜索框聚焦时不干预
+    if (document.activeElement === searchInput.value) return;
+    const list = logsStore.filteredReqs;
+    if (!list.length) return;
+    e.preventDefault();
+    // 主动移除焦点，防止按钮/tab等元素出现 focus 高亮
+    (document.activeElement as HTMLElement)?.blur();
+    const cur = logsStore.curRequestId;
+    const idx = cur ? list.findIndex(r => r.requestId === cur) : -1;
+    let next: number;
+    if (e.key === 'ArrowUp') next = idx <= 0 ? list.length - 1 : idx - 1;
+    else next = idx < 0 || idx >= list.length - 1 ? 0 : idx + 1;
+    logsStore.selectRequest(list[next].requestId);
+    nextTick(() => {
+      const el = rlistEl.value?.querySelectorAll('.ri')[next] as HTMLElement | undefined;
+      el?.scrollIntoView({ block: 'nearest' });
+    });
   }
 }
 
@@ -174,24 +196,31 @@ function selectReq(id: string) {
 
 <style scoped>
 .request-list {
-  width: 340px; flex-shrink: 0;
+  width: 370px; flex-shrink: 0;
   display: flex; flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg1);
 }
-[data-theme="dark"] .request-list { background: rgba(26,29,39,.7); }
+[data-theme="dark"] .request-list { background: rgba(22,27,39,.75); }
 
 .search { padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .sw { position: relative; }
 .sw::before { content: '🔍'; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 11px; pointer-events: none; }
 .si {
-  width: 100%; padding: 6px 10px 6px 28px; font-size: 12px;
+  width: 100%; padding: 6px 28px 6px 28px; font-size: 12px;
   background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--radius); color: var(--text);
   font-family: var(--mono); outline: none; transition: border-color .2s;
 }
 .si:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
 .si::placeholder { color: var(--text-muted); }
+.si-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 12px; padding: 0 2px;
+  line-height: 1; display: flex; align-items: center;
+}
+.si-clear:hover { color: var(--text); }
 
 .tbar { padding: 5px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 3px; flex-wrap: wrap; }
 .tb {
@@ -230,7 +259,12 @@ function selectReq(id: string) {
   overflow: hidden;
 }
 .ri:hover { background: var(--hover-bg); border-color: var(--border); }
-.ri.sel { background: var(--active-bg); border-left: 3px solid var(--blue); padding-left: 13px; border-color: var(--blue); }
+.ri.sel {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--blue) 10%, transparent) 0%, transparent 100%);
+  border-color: var(--border-faint);
+  border-left: 3px solid var(--blue);
+  padding-left: 13px;
+}
 
 /* 状态点 — 右上角绝对定位 */
 .st {
@@ -297,14 +331,13 @@ function selectReq(id: string) {
 .rdbar-bg {
   height: 3px;
   background: var(--border-faint);
-  margin: 4px -12px -6px -14px;
-  border-radius: 0 0 8px 8px;
+  margin: 4px 0 0 0;
+  border-radius: 2px;
   overflow: hidden;
 }
-.ri.sel .rdbar-bg { margin: 4px -12px -6px -13px; }
 .rdbar {
   height: 100%;
-  border-radius: 0 2px 2px 0;
+  border-radius: 2px;
   transition: width .4s ease;
 }
 @keyframes prog { 0%,100%{opacity:.4} 50%{opacity:1} }

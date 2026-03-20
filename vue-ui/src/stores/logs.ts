@@ -58,13 +58,19 @@ export const useLogsStore = defineStore('logs', () => {
 
   async function selectRequest(id: string) {
     curRequestId.value = id;
-    curLogs.value = [];
-    payload.value = null;
+    // 保留旧 curLogs/payload 直到新数据就绪，避免中间空态闪烁
     try {
       const [l, p] = await Promise.all([fetchLogs({ requestId: id }), fetchPayload(id)]);
-      curLogs.value = l;
-      payload.value = p;
-    } catch { /* ignore */ }
+      if (curRequestId.value === id) {
+        curLogs.value = l;
+        payload.value = p;
+      }
+    } catch {
+      if (curRequestId.value === id) {
+        curLogs.value = [];
+        payload.value = null;
+      }
+    }
   }
 
   function deselect() {

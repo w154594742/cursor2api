@@ -1,14 +1,12 @@
 <template>
   <div class="detail-panel">
-    <LogList v-if="!logsStore.curRequestId" />
-    <template v-else>
+    <LogList v-show="!logsStore.curRequestId" />
+    <template v-if="logsStore.curRequestId">
       <div class="detail-header">
         <span class="req-seq">{{ seqNum }}</span>
         <span class="req-id">{{ logsStore.curRequestId }}</span>
         <span v-if="curReq?.title" class="req-title">{{ curReq.title }}</span>
       </div>
-
-      <PhaseTimeline :summary="curReq" />
 
       <div class="stats-grid" v-if="curReq">
         <div class="all-badges">
@@ -16,20 +14,22 @@
           <span class="sbadge s-time"><span class="sbl">耗时</span><b>{{ curReq.endTime ? fmtMs(curReq.endTime - curReq.startTime) : '…' }}</b></span>
           <span v-if="curReq.ttft" class="sbadge s-ttft"><span class="sbl">TTFT</span><b>⚡️{{ fmtMs(curReq.ttft) }}</b></span>
           <span v-if="curReq.cursorApiTime" class="sbadge s-api"><span class="sbl">API耗时</span><b>{{ fmtMs(curReq.cursorApiTime) }}</b></span>
-          <span v-if="curReq.stream" class="sbadge s-stream">Stream</span>
-          <span v-if="curReq.retryCount > 0" class="sbadge s-retry">↺ {{ curReq.retryCount }}</span>
-          <span v-if="curReq.continuationCount > 0" class="sbadge s-cont">+{{ curReq.continuationCount }}</span>
+          <!-- <span v-if="curReq.stream" class="sbadge s-stream">Stream</span> -->
+          <span v-if="curReq.retryCount > 0" class="sbadge s-retry">重试{{ curReq.retryCount }}</span>
+          <span v-if="curReq.continuationCount > 0" class="sbadge s-cont">续写{{ curReq.continuationCount }}</span>
           <span class="sbadge sm-badge"><span class="sm-l">模型</span><b>{{ shortModel(curReq.model) }}</b></span>
           <span class="sbadge sm-badge"><span class="sm-l">格式</span><b :class="'fmt-' + curReq.apiFormat">{{ curReq.apiFormat.toUpperCase() }}</b></span>
-          <span class="sbadge sm-badge"><span class="sm-l">消息数</span><b>{{ curReq.messageCount }} 条</b></span>
-          <span class="sbadge sm-badge"><span class="sm-l">响应</span><b>{{ fmtN(curReq.responseChars) }} chars</b></span>
-          <span v-if="curReq.toolCount > 0" class="sbadge sm-badge"><span class="sm-l">工具定义</span><b>{{ curReq.toolCount }} 个</b></span>
-          <span v-if="curReq.toolCallsDetected > 0" class="sbadge sm-badge"><span class="sm-l">工具调用</span><b>{{ curReq.toolCallsDetected }} 次</b></span>
-          <span v-if="curReq.thinkingChars > 0" class="sbadge sm-badge"><span class="sm-l">Thinking</span><b>{{ fmtN(curReq.thinkingChars) }} chars</b></span>
-          <span v-if="curReq.stopReason" class="sbadge sm-badge"><span class="sm-l">停止</span><b>{{ curReq.stopReason }}</b></span>
+          <span class="sbadge sm-badge"><span class="sm-l">消息数</span><b>{{ curReq.messageCount }}</b></span>
+          <span class="sbadge sm-badge"><span class="sm-l">响应</span><b>{{ fmtN(curReq.responseChars) }}</b>chars</span>
+          <!-- <span v-if="curReq.toolCount > 0" class="sbadge sm-badge"><span class="sm-l">工具定义</span><b>{{ curReq.toolCount }}</b>个</span> -->
+          <span v-if="curReq.toolCallsDetected > 0" class="sbadge sm-badge"><span class="sm-l">工具调用</span><b>{{ curReq.toolCallsDetected }}</b>次</span>
+          <span v-if="curReq.thinkingChars > 0" class="sbadge sm-badge"><span class="sm-l">Thinking</span><b>{{ fmtN(curReq.thinkingChars) }}</b>chars</span>
+          <span v-if="curReq.stopReason" class="sbadge sm-badge"><span class="sm-l">停止原因</span><b>{{ curReq.stopReason }}</b></span>
           <span v-if="curReq.error" class="sbadge sm-badge sm-err"><span class="sm-l">错误</span><b>{{ curReq.error }}</b></span>
         </div>
       </div>
+
+      <PhaseTimeline :summary="curReq" />
 
       <div class="tabs-row">
         <div class="tabs">
@@ -52,8 +52,8 @@
       </div>
 
       <div class="tab-content">
-        <LogList v-if="activeTab === 'logs'" />
-        <PayloadView v-else :mode="activeTab as 'request' | 'prompts' | 'response'" :mdPreview="mdPreview" />
+        <LogList v-show="activeTab === 'logs'" />
+        <PayloadView v-show="activeTab !== 'logs'" :mode="activeTab as 'request' | 'prompts' | 'response'" :mdPreview="mdPreview" />
       </div>
     </template>
   </div>
@@ -193,7 +193,7 @@ function fmtMs(ms: number): string {
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
 
-.tab-tools { padding: 0 10px; display: flex; align-items: center; gap: 6px; }
+.tab-tools { padding: 0 14px; display: flex; align-items: center; gap: 6px; }
 .preview-btn {
   font-size: 11px; padding: 3px 10px;
   border: 1px solid var(--border); border-radius: 4px;
@@ -208,8 +208,14 @@ function fmtMs(ms: number): string {
 [data-theme="light"] .detail-panel { background: #f7f9fc; }
 [data-theme="light"] .detail-header { background: #fff; }
 [data-theme="light"] .stats-grid { background: #fff; }
-[data-theme="light"] .all-badges .sbadge { background: #f0f4f8; border-color: #cbd5e1; }
-[data-theme="light"] .sbadge.s-time { background: #fff; }
+/* 仅 sm-badge（元信息）用灰底，状态色 badge 保留 color-mix 彩色背景 */
+[data-theme="light"] .sbadge.sm-badge { background: #f0f4f8; border-color: #e2e8f0; }
+[data-theme="light"] .sbadge.s-time { background: #fff; border-color: #e2e8f0; }
 [data-theme="light"] .sm-badge b { color: #1e293b; }
 [data-theme="light"] .tabs-row { background: #fff; }
+
+/* 暗色皮肤层次感 */
+[data-theme="dark"] .detail-header { background: var(--bg1); }
+[data-theme="dark"] .stats-grid { background: var(--bg1); }
+[data-theme="dark"] .tabs-row { background: var(--bg1); border-top: 1px solid var(--border); }
 </style>

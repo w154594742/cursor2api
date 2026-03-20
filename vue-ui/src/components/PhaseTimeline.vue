@@ -1,15 +1,16 @@
 <template>
   <div class="timeline" v-if="summary?.phaseTimings?.length && totalDuration > 0">
-    <div class="pbar">
-      <div
-        v-for="pt in summary.phaseTimings"
-        :key="pt.phase + pt.startTime"
-        class="pseg"
-        :style="{ width: Math.max(1, barWidth(pt)) + '%', background: phaseColor(pt.phase) }"
-        :title="pt.label + ': ' + fmtMs(getDur(pt))"
-      >
-        <span class="tip">{{ pt.label }} {{ fmtMs(getDur(pt)) }}</span>
-        <span v-if="barWidth(pt) > 10" class="phase-label">{{ pt.phase }}</span>
+    <div class="tl-row">
+      <div class="pbar">
+        <div
+          v-for="(pt, i) in summary.phaseTimings"
+          :key="pt.phase + pt.startTime"
+          class="pseg"
+          :style="{ flexGrow: segGrow[i], background: phaseColor(pt.phase) }"
+          :title="pt.label + ': ' + fmtMs(getDur(pt))"
+        >
+          <span class="pl">{{ pt.label }} {{ fmtMs(getDur(pt)) }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -47,33 +48,68 @@ function fmtMs(ms: number): string {
   return ms >= 1000 ? (ms / 1000).toFixed(2).replace(/\.?0+$/, '') + 's' : ms + 'ms';
 }
 
-function barWidth(pt: PhaseTiming): number {
-  const dur = getDur(pt);
-  const total = totalDuration.value;
-  if (total <= 0) return 0;
-  return (dur / total) * 100;
-}
+// 对数压缩：让短段也能有足够宽度显示文字
+// 用 log(dur+1) 作为 flex-grow，再与纯比例混合，取加权平均
+const segGrow = computed(() => {
+  const timings = props.summary?.phaseTimings ?? [];
+  if (!timings.length) return [];
+  const durs = timings.map(pt => Math.max(1, getDur(pt)));
+  const total = durs.reduce((a, b) => a + b, 0);
+  // 对数值
+  const logs = durs.map(d => Math.log(d + 1));
+  const logTotal = logs.reduce((a, b) => a + b, 0);
+  // 混合比例：50% 对数 + 50% 线性，让短段不太窄、长段不太宽
+  return durs.map((d, i) => {
+    const linear = d / total;
+    const log = logs[i] / logTotal;
+    return Math.max(0.05, linear * 0.5 + log * 0.5);
+  });
+});
 </script>
 
 <style scoped>
-.timeline { padding: 8px 14px; flex-shrink: 0; }
+.timeline { padding: 4px 14px 6px; flex-shrink: 0; }
+
+.tl-row { display: flex; align-items: stretch; gap: 6px; }
+
 .pbar {
-  display: flex; height: 18px; border-radius: 4px; overflow: visible;
-  gap: 1px;
+  flex: 1;
+  display: flex;
+  height: 22px;
+  border-radius: 5px;
+  gap: 2px;
+  overflow: hidden;
+  min-width: 0;
 }
+
 .pseg {
-  position: relative; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden; border-radius: 3px;
-  cursor: default; min-width: 2px;
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 3px;
+  cursor: default;
+  font-size: 10px;
 }
-.pseg:hover .tip { display: block; }
-.tip {
-  display: none;
-  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
-  background: #111; color: #fff; font-size: 11px; padding: 3px 8px;
-  border-radius: 4px; white-space: nowrap; z-index: 10;
-  pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+
+.pl {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+  text-align: center;
 }
-.phase-label { font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.9); }
+[data-theme="light"] .pl {
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+}
 </style>

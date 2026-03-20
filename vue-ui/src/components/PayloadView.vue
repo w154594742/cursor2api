@@ -1,28 +1,40 @@
 <template>
   <div class="payload-view">
-    <div v-if="!logsStore.payload" class="empty">
+    <div v-if="!logsStore.payload && !logsStore.curRequestId" class="empty">
       <div class="ic">📭</div><p>暂无数据</p>
+    </div>
+    <div v-else-if="!logsStore.payload" class="loading-placeholder">
+      <div class="loading-bar" />
     </div>
 
     <!-- 请求参数 tab -->
     <template v-else-if="mode === 'request'">
+      <Section v-if="curReq" title="📋 请求概要">
+        <CodeBlock lang="json" :content="fmt({ method: curReq.method, path: curReq.path, model: curReq.model, stream: curReq.stream, apiFormat: curReq.apiFormat, messageCount: curReq.messageCount, toolCount: curReq.toolCount, hasTools: curReq.hasTools })" />
+      </Section>
+
       <Section v-if="logsStore.payload.tools?.length" :title="`🔧 工具定义`" :count="logsStore.payload.tools.length" count-unit="个">
         <ToolItem v-for="t in logsStore.payload.tools" :key="t.name" :tool="t" />
       </Section>
 
       <Section v-if="logsStore.payload.cursorRequest" title="🔄 Cursor 请求（转换后）">
-        <CodeBlock :content="fmt(logsStore.payload.cursorRequest)" />
+        <CodeBlock lang="json" :content="fmt(logsStore.payload.cursorRequest)" />
       </Section>
 
       <Section v-if="logsStore.payload.cursorMessages?.length"
         :title="`📨 Cursor 消息列表`" :count="logsStore.payload.cursorMessages.length" count-unit="条">
         <template #extra>
+          <div class="msg-search-wrap" @click.stop>
+            <input v-model="cursorMsgSearch" class="msg-search" placeholder="搜索消息…" />
+            <button v-if="cursorMsgSearch" class="msg-search-clear" @click="cursorMsgSearch = ''">✕</button>
+          </div>
           <button class="toggle-all-btn" @click="cursorAllOpen = cursorAllOpen === true ? false : true">
             {{ cursorAllOpen === true ? '全部折叠' : '全部展开' }}
           </button>
         </template>
-        <MsgItem v-for="(m, i) in logsStore.payload.cursorMessages" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
-          :defaultOpen="msgDefaultOpen(logsStore.payload.cursorMessages, i, cursorAllOpen)" />
+        <div v-if="cursorMsgSearch && !filteredCursorMsgs.length" class="search-empty">无匹配消息</div>
+        <MsgItem v-for="({ m, i }) in filteredCursorMsgs" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
+          :defaultOpen="msgDefaultOpen(logsStore.payload.cursorMessages, i, cursorAllOpen)" :highlight="cursorMsgSearch" />
       </Section>
 
       <div v-if="!hasRequest" class="empty"><div class="ic">📥</div><p>暂无请求数据</p></div>
@@ -53,23 +65,33 @@
       <Section v-if="logsStore.payload.messages?.length"
         :title="`💬 原始消息`" :count="logsStore.payload.messages.length" count-unit="条">
         <template #extra>
+          <div class="msg-search-wrap" @click.stop>
+            <input v-model="origMsgSearch" class="msg-search" placeholder="搜索消息…" />
+            <button v-if="origMsgSearch" class="msg-search-clear" @click="origMsgSearch = ''">✕</button>
+          </div>
           <button class="toggle-all-btn" @click="origAllOpen = origAllOpen === true ? false : true">
             {{ origAllOpen === true ? '全部折叠' : '全部展开' }}
           </button>
         </template>
-        <MsgItem v-for="(m, i) in logsStore.payload.messages" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
-          :defaultOpen="msgDefaultOpen(logsStore.payload.messages, i, origAllOpen)" />
+        <div v-if="origMsgSearch && !filteredOrigMsgs.length" class="search-empty">无匹配消息</div>
+        <MsgItem v-for="({ m, i }) in filteredOrigMsgs" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
+          :defaultOpen="msgDefaultOpen(logsStore.payload.messages, i, origAllOpen)" :highlight="origMsgSearch" />
       </Section>
 
       <Section v-if="logsStore.payload.cursorMessages?.length"
         :title="`📨 Cursor 消息`" :count="logsStore.payload.cursorMessages.length" count-unit="条">
         <template #extra>
+          <div class="msg-search-wrap" @click.stop>
+            <input v-model="cursorMsgSearch" class="msg-search" placeholder="搜索消息…" />
+            <button v-if="cursorMsgSearch" class="msg-search-clear" @click="cursorMsgSearch = ''">✕</button>
+          </div>
           <button class="toggle-all-btn" @click="cursorAllOpen = cursorAllOpen === true ? false : true">
             {{ cursorAllOpen === true ? '全部折叠' : '全部展开' }}
           </button>
         </template>
-        <MsgItem v-for="(m, i) in logsStore.payload.cursorMessages" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
-          :defaultOpen="msgDefaultOpen(logsStore.payload.cursorMessages, i, cursorAllOpen)" />
+        <div v-if="cursorMsgSearch && !filteredCursorMsgs.length" class="search-empty">无匹配消息</div>
+        <MsgItem v-for="({ m, i }) in filteredCursorMsgs" :key="i" :msg="m" :mdPreview="mdPreview" :index="i"
+          :defaultOpen="msgDefaultOpen(logsStore.payload.cursorMessages, i, cursorAllOpen)" :highlight="cursorMsgSearch" />
       </Section>
 
       <div v-if="!hasPrompts" class="empty"><div class="ic">💬</div><p>暂无提示词数据</p></div>
@@ -226,6 +248,30 @@ const hasResponse = computed(() =>
      logsStore.payload?.continuationResponses?.length)
 );
 
+// ===== 消息搜索 =====
+const cursorMsgSearch = ref('');
+const origMsgSearch = ref('');
+
+function msgMatches(m: { contentPreview: string; role: string }, q: string): boolean {
+  if (!q) return true;
+  const lq = q.toLowerCase();
+  return m.contentPreview.toLowerCase().includes(lq) || m.role.toLowerCase().includes(lq);
+}
+
+const filteredCursorMsgs = computed(() => {
+  const list = logsStore.payload?.cursorMessages ?? [];
+  const q = cursorMsgSearch.value.trim();
+  if (!q) return list.map((m, i) => ({ m, i }));
+  return list.map((m, i) => ({ m, i })).filter(({ m }) => msgMatches(m, q));
+});
+
+const filteredOrigMsgs = computed(() => {
+  const list = logsStore.payload?.messages ?? [];
+  const q = origMsgSearch.value.trim();
+  if (!q) return list.map((m, i) => ({ m, i }));
+  return list.map((m, i) => ({ m, i })).filter(({ m }) => msgMatches(m, q));
+});
+
 // ===== 子组件 =====
 
 // Section: 可折叠区块
@@ -284,6 +330,23 @@ const CodeBlock = defineComponent({
           h('button', { class: 'copy-btn', onClick: copy }, copied.value ? '✓ 已复制' : '复制'),
         ]);
       }
+      const lang = p.lang || '';
+      let highlighted = '';
+      try {
+        if (lang && hljs.getLanguage(lang)) {
+          highlighted = hljs.highlight(content, { language: lang }).value;
+        } else {
+          // 自动检测，优先尝试 JSON
+          const auto = hljs.highlightAuto(content, ['json', 'javascript', 'typescript', 'python', 'bash', 'yaml']);
+          highlighted = auto.value;
+        }
+      } catch { highlighted = ''; }
+      if (highlighted) {
+        return h('div', { class: 'code-wrap' }, [
+          h('pre', { class: 'code-block hljs' }, h('code', { innerHTML: highlighted })),
+          h('button', { class: 'copy-btn', onClick: copy }, copied.value ? '✓ 已复制' : '复制'),
+        ]);
+      }
       return h('div', { class: 'code-wrap' }, [
         h('pre', { class: 'code-block' }, content),
         h('button', { class: 'copy-btn', onClick: copy }, copied.value ? '✓ 已复制' : '复制'),
@@ -327,11 +390,13 @@ const MsgItem = defineComponent({
     mdPreview: Boolean,
     defaultOpen: { type: Boolean, default: null },
     index: { type: Number, default: -1 },
+    highlight: { type: String, default: '' },
   },
   setup(p) {
     const open = ref(p.defaultOpen !== null ? p.defaultOpen : (p.msg?.contentLength ?? 0) <= 2000);
-    // 响应 defaultOpen 变化（全部展开/折叠按钮实时生效）
     watch(() => p.defaultOpen, (v) => { if (v !== null) open.value = v; });
+    // 搜索词变化时自动展开
+    watch(() => p.highlight, (v) => { if (v) open.value = true; });
     const copied = ref(false);
     async function copy() {
       try {
@@ -339,6 +404,15 @@ const MsgItem = defineComponent({
         copied.value = true;
         setTimeout(() => { copied.value = false; }, 1500);
       } catch { /* ignore */ }
+    }
+    function escapeHtml(s: string) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function highlightText(text: string, q: string): string {
+      if (!q) return escapeHtml(text);
+      const escaped = escapeHtml(text);
+      const escapedQ = escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return escaped.replace(new RegExp(escapedQ, 'gi'), m => `<mark class="hl">${m}</mark>`);
     }
     return () => {
       const m = p.msg!;
@@ -360,9 +434,9 @@ const MsgItem = defineComponent({
             copied.value ? '✓' : '复制'),
         ]),
         open.value ? h('div', { class: 'msg-body' }, [
-          p.mdPreview
+          p.mdPreview && !p.highlight
             ? h('div', { class: 'md-preview', innerHTML: marked.parse(m.contentPreview) as string })
-            : h('pre', { class: 'code-block' }, m.contentPreview),
+            : h('pre', { class: 'code-block', innerHTML: highlightText(m.contentPreview, p.highlight ?? '') }),
         ]) : null,
       ]);
     };
@@ -372,7 +446,11 @@ const MsgItem = defineComponent({
 
 <style>
 .payload-view { flex: 1; overflow-y: auto; font-size: 12px; }
-.empty { padding: 32px; text-align: center; color: var(--text-muted); }
+.empty {
+  padding: 32px; text-align: center; color: var(--text-muted);
+  opacity: 0; animation: empty-appear 0s 200ms forwards;
+}
+@keyframes empty-appear { to { opacity: 1; } }
 .empty .ic { font-size: 28px; margin-bottom: 8px; }
 
 /* Section */
@@ -425,32 +503,76 @@ const MsgItem = defineComponent({
   border: none; border-radius: 0; padding: 0;
   max-height: 600px; background: transparent;
 }
-.md-preview :deep(h1),.md-preview :deep(h2),.md-preview :deep(h3) { margin: 12px 0 6px; font-weight: 600; }
-.md-preview :deep(p) { margin: 6px 0; }
-.md-preview :deep(code) {
+.md-preview h1 { margin: 14px 0 6px; font-weight: 700; font-size: 18px; }
+.md-preview h2 { margin: 12px 0 6px; font-weight: 700; font-size: 15px; }
+.md-preview h3 { margin: 10px 0 4px; font-weight: 600; font-size: 13px; }
+.md-preview p { margin: 6px 0; }
+.md-preview code {
   background: var(--pill-bg); padding: 1px 5px; border-radius: 3px;
   font-family: var(--mono); font-size: 11px;
 }
-.md-preview :deep(pre) {
+.md-preview pre {
   padding: 0; border-radius: 6px; overflow-x: auto; margin: 8px 0;
 }
-.md-preview :deep(pre code.hljs) {
+.md-preview pre code.hljs {
   border-radius: 6px; padding: 12px 14px; font-size: 12px;
   font-family: var(--mono); display: block;
 }
-.md-preview :deep(pre code:not(.hljs)) { background: none; padding: 0; }
-.md-preview :deep(ul),.md-preview :deep(ol) { padding-left: 20px; margin: 6px 0; }
-.md-preview :deep(blockquote) {
+.md-preview pre code:not(.hljs) { background: none; padding: 0; }
+.md-preview ul,.md-preview ol { padding-left: 20px; margin: 6px 0; }
+.md-preview blockquote {
   border-left: 3px solid var(--blue); padding-left: 10px;
   color: var(--text-muted); margin: 8px 0;
 }
-.md-preview :deep(table) { border-collapse: collapse; width: 100%; margin: 8px 0; }
-.md-preview :deep(th),.md-preview :deep(td) { border: 1px solid var(--border); padding: 4px 8px; }
-.md-preview :deep(th) { background: var(--pill-bg); }
-.md-preview :deep(a) { color: var(--blue); }
+.md-preview table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.md-preview th,.md-preview td { border: 1px solid var(--border); padding: 4px 8px; }
+.md-preview th { background: var(--pill-bg); }
+.md-preview a { color: var(--blue); }
 
 /* cs-extra slot (展开/折叠按钮区) */
-.cs-extra { margin-left: auto; }
+.cs-extra { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+/* 加载占位 */
+.loading-placeholder { padding: 16px 14px; }
+.loading-bar {
+  height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--blue) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* 消息搜索框容器 */
+.msg-search-wrap {
+  position: relative; display: flex; align-items: center;
+}
+.msg-search {
+  height: 22px; padding: 0 22px 0 8px; font-size: 11px;
+  background: var(--bg0); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); outline: none;
+  width: 120px; transition: border-color .15s, width .2s;
+}
+.msg-search:focus { border-color: var(--blue); width: 160px; }
+.msg-search::placeholder { color: var(--text-muted); }
+.msg-search-clear {
+  position: absolute; right: 4px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 12px; padding: 0 2px;
+  line-height: 1; display: flex; align-items: center;
+}
+.msg-search-clear:hover { color: var(--text); }
+
+/* 搜索无结果 */
+.search-empty {
+  padding: 8px 14px; font-size: 11px; color: var(--text-muted);
+  opacity: 0; animation: empty-appear 0s 200ms forwards;
+}
+
+/* 搜索高亮 */
+mark.hl {
+  background: color-mix(in srgb, var(--yellow) 35%, transparent);
+  color: inherit; border-radius: 2px; padding: 0 1px;
+}
 .toggle-all-btn {
   font-size: 10px; padding: 1px 8px;
   border: 1px solid var(--border); border-radius: 4px;
@@ -468,7 +590,7 @@ const MsgItem = defineComponent({
   transition: background .1s; user-select: none;
 }
 .tool-hdr:hover { background: var(--hover-bg); }
-.tool-name { font-family: var(--mono); font-weight: 600; color: #a78bfa; font-size: 12px; flex-shrink: 0; }
+.tool-name { font-family: var(--mono); font-weight: 600; color: var(--purple); font-size: 12px; flex-shrink: 0; }
 .tool-hint { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .tool-body { padding: 8px 10px; background: var(--bg); font-size: 11px; color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; }
 

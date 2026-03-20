@@ -8,10 +8,6 @@
       <div class="stream-badge">
         <span class="live-dot" />实时流
       </div>
-      <!-- <div class="stream-badge req-mode" v-else>
-        <span class="req-dot" />{{ logsStore.curRequestId }}
-        <button class="exit-btn" @click="logsStore.deselect()">✕ 退出</button>
-      </div> -->
       <!-- 级别筛选 pill -->
       <div class="level-pills">
         <button
@@ -22,11 +18,16 @@
           @click="levelFilter = lv.value"
         >{{ lv.label }}</button>
       </div>
+      <!-- 搜索框 -->
+      <div class="log-search-wrap">
+        <input v-model="logSearch" class="log-search" placeholder="关键字搜索…" />
+        <button v-if="logSearch" class="log-search-clear" @click="logSearch = ''">✕</button>
+      </div>
       <!-- 自动展开 -->
       <label class="auto-exp">
         <input type="checkbox" v-model="autoExpand" @change="onAutoExpand" /> 展开
       </label>
-      <span class="log-count">{{ filtered.length }}</span>
+      <span class="log-count">{{ filtered.length }} 请求</span>
     </div>
     <div class="log-list" ref="listEl">
       <div v-if="!filtered.length" class="empty">
@@ -37,7 +38,7 @@
       <template v-else>
         <template v-for="(entry, i) in filtered" :key="entry.id">
           <template v-if="!logsStore.curRequestId">
-            <template v-if="i > 0 && filtered[i-1].requestId !== entry.requestId">
+            <template v-if="i === 0 || filtered[i-1].requestId !== entry.requestId">
               <div class="le-sep" />
               <div class="le-sep-label">
                 <span class="sep-dot" />
@@ -59,13 +60,13 @@
             <span class="ls">{{ entry.source }}</span>
             <span class="lp">{{ entry.phase }}</span>
             <div class="lm">
-              {{ entry.message }}
+              <span v-html="hlMsg(entry.message)" />
               <template v-if="entry.details">
                 <div class="ldt" @click="toggleDetail(entry.id)">
                   {{ expanded[entry.id] ? '▼ 收起' : '▶ 详情' }}
                 </div>
                 <div v-if="expanded[entry.id]" class="ldd">
-                  <pre>{{ fmtDetails(entry.details) }}</pre>
+                  <pre class="hljs" v-html="hlDetails(entry.details)" />
                   <button class="copy-btn" @click.stop="copy(fmtDetails(entry.details))">复制</button>
                 </div>
               </template>
@@ -81,10 +82,14 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { useLogsStore } from '../stores/logs';
 import type { LogPhase } from '../types';
+import hljs from 'highlight.js/lib/core';
+import json from 'highlight.js/lib/languages/json';
+hljs.registerLanguage('json', json);
 
 const logsStore = useLogsStore();
 const autoExpand = ref(false);
 const levelFilter = ref<'all' | 'debug' | 'info' | 'warn' | 'error'>('all');
+const logSearch = ref('');
 // 用 Record 替代 Set，保证 Vue 响应式
 const expanded = ref<Record<string, boolean>>({});
 const listEl = ref<HTMLElement | null>(null);
@@ -110,10 +115,29 @@ function phaseColor(phase: LogPhase): string {
 }
 
 const filtered = computed(() => {
-  const logs = logsStore.displayLogs;
-  if (levelFilter.value === 'all') return logs;
-  return logs.filter(l => l.level === levelFilter.value);
+  let logs = logsStore.displayLogs;
+  if (levelFilter.value !== 'all') logs = logs.filter(l => l.level === levelFilter.value);
+  const q = logSearch.value.trim().toLowerCase();
+  if (!q) return logs;
+  return logs.filter(l =>
+    l.message.toLowerCase().includes(q) ||
+    (l.source ?? '').toLowerCase().includes(q) ||
+    l.phase.toLowerCase().includes(q) ||
+    reqTitle(l.requestId).toLowerCase().includes(q)
+  );
 });
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function hlMsg(msg: string): string {
+  const q = logSearch.value.trim();
+  if (!q) return escHtml(msg);
+  const escaped = escHtml(msg);
+  const escapedQ = escHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp(escapedQ, 'gi'), m => `<mark class="lhl">${m}</mark>`);
+}
 
 function reqTitle(requestId: string): string {
   return logsStore.reqs.find(r => r.requestId === requestId)?.title ?? '';
@@ -134,6 +158,15 @@ function fmtTime(ts: number): string {
 
 function fmtDetails(d: unknown): string {
   return typeof d === 'string' ? d : JSON.stringify(d, null, 2);
+}
+
+function hlDetails(d: unknown): string {
+  const text = fmtDetails(d);
+  try {
+    return hljs.highlight(text, { language: 'json' }).value;
+  } catch {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 }
 
 function toggleDetail(id: string) {
@@ -227,8 +260,33 @@ async function copy(text: string) {
 .auto-exp input { cursor: pointer; }
 .log-count { color: var(--text-muted); margin-left: auto; font-size: 10px; font-family: var(--mono); }
 
+.log-search-wrap { position: relative; display: flex; align-items: center; }
+.log-search {
+  height: 22px; padding: 0 22px 0 8px; font-size: 11px;
+  background: var(--bg0); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); outline: none;
+  width: 150px; transition: border-color .15s, width .2s;
+}
+.log-search:focus { border-color: var(--blue); width: 200px; }
+.log-search::placeholder { color: var(--text-muted); }
+.log-search-clear {
+  position: absolute; right: 4px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 12px; padding: 0 2px; line-height: 1;
+}
+.log-search-clear:hover { color: var(--text); }
+
+mark.lhl {
+  background: color-mix(in srgb, var(--yellow) 35%, transparent);
+  color: inherit; border-radius: 2px; padding: 0 1px;
+}
+
 .log-list { flex: 1; overflow-y: auto; font-size: 12px; }
-.empty { padding: 24px; text-align: center; color: var(--text-muted); }
+.empty {
+  padding: 24px; text-align: center; color: var(--text-muted);
+  opacity: 0; animation: empty-appear 0s 200ms forwards;
+}
+@keyframes empty-appear { to { opacity: 1; } }
 .empty .ic { font-size: 24px; margin-bottom: 8px; }
 .empty .sub { font-size: 11px; margin-top: 4px; }
 
@@ -240,7 +298,7 @@ async function copy(text: string) {
 .sep-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); opacity: .5; flex-shrink: 0; }
 .sep-id { color: var(--text-muted); opacity: .7; }
 .sep-line { color: var(--text-muted); opacity: .4; }
-.sep-title { color: var(--text); font-weight: 500; font-family: var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.sep-title { color: var(--text); font-weight: 500; font-family: var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
 
 .le {
   display: grid;
@@ -260,16 +318,16 @@ async function copy(text: string) {
   border-radius: 3px; text-transform: uppercase; text-align: center;
 }
 .ll.debug { background: var(--pill-bg); color: var(--text-muted); }
-.ll.info { background: #1e3a5f; color: #60a5fa; }
-.ll.warn { background: #3a2800; color: #fbbf24; }
-.ll.error { background: #3a1010; color: #f87171; }
+.ll.info { background: color-mix(in srgb, var(--blue) 15%, transparent); color: var(--blue); }
+.ll.warn { background: color-mix(in srgb, var(--yellow) 15%, transparent); color: var(--yellow); }
+.ll.error { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
 [data-theme="light"] .ll.info { background: #eff6ff; color: #2563eb; }
 [data-theme="light"] .ll.warn { background: #fffbeb; color: #d97706; }
 [data-theme="light"] .ll.error { background: #fef2f2; color: #dc2626; }
-.ls { font-size: 10px; font-weight: 500; color: #a78bfa; padding-top: 2px; }
+.ls { font-size: 10px; font-weight: 500; color: var(--purple); padding-top: 2px; }
 .lp {
   font-size: 9px; padding: 2px 4px; border-radius: 3px;
-  background: #0a2030; color: #22d3ee; text-align: center; font-weight: 500;
+  background: color-mix(in srgb, var(--cyan) 12%, transparent); color: var(--cyan); text-align: center; font-weight: 500;
 }
 [data-theme="light"] .lp { background: #ecfeff; color: #0891b2; }
 .lm { color: var(--text); word-break: break-word; line-height: 1.4; font-size: 12px; }

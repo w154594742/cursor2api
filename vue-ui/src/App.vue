@@ -40,6 +40,13 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 const { connect: connectSSE, disconnect: disconnectSSE } = useSSE((connected) => { sseConnected.value = connected; });
 
 onMounted(async () => {
+  // URL 参数 token 优先：?token=sk-xxx
+  const urlToken = new URLSearchParams(location.search).get('token');
+  if (urlToken) {
+    auth.setToken(urlToken);
+    // 清除 URL 参数，避免 token 暴露在浏览器历史
+    history.replaceState(null, '', location.pathname);
+  }
   try {
     const res = await fetch('/api/stats', {
       headers: auth.token ? { Authorization: `Bearer ${auth.token}` } : {},
@@ -123,22 +130,22 @@ async function onLogin() {
 
 /* ===== Dark Theme ===== */
 [data-theme="dark"] {
-  --bg0: #16181f;
-  --bg1: #1e2130;
-  --bg2: #232838;
-  --bg3: #2a2f42;
-  --bg-card: #1e2130;
-  --bdr: #2e3348;
-  --bdr2: #3a4060;
+  --bg0: #0d1117;
+  --bg1: #161b27;
+  --bg2: #1c2133;
+  --bg3: #21273a;
+  --bg-card: #161b27;
+  --bdr: #2a3150;
+  --bdr2: #3a4268;
   --t1: #e2e8f0;
-  --t2: #94a3b8;
-  --t3: #64748b;
-  --blue: #60a5fa;
-  --cyan: #22d3ee;
-  --green: #34d399;
-  --yellow: #fbbf24;
+  --t2: #8892aa;
+  --t3: #546178;
+  --blue: #58a6ff;
+  --cyan: #39d0e8;
+  --green: #3dd68c;
+  --yellow: #f0b429;
   --red: #f87171;
-  --purple: #a78bfa;
+  --purple: #b48efa;
   --pink: #f472b6;
   --orange: #fb923c;
   --mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'SF Mono', 'Consolas', 'Menlo', monospace;
@@ -151,7 +158,7 @@ async function onLogin() {
   --bg: var(--bg0);
   --card-bg: var(--bg1);
   --border: var(--bdr);
-  --border-faint: #232838;
+  --border-faint: #1e2540;
   --text: var(--t1);
   --text-muted: var(--t3);
   --accent: var(--blue);
@@ -181,7 +188,17 @@ body {
 }
 
 [data-theme="light"] body {
-  background: linear-gradient(135deg, #e0e7ff 0%, #f0f4f8 30%, #fdf2f8 70%, #f0f4f8 100%);
+  background: linear-gradient(135deg, #e8eeff 0%, #f0f4f8 40%, #eef2f8 70%, #f0f4f8 100%);
+  background-attachment: fixed;
+}
+
+[data-theme="dark"] body {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(88,166,255,0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 110%, rgba(57,208,232,0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 30% at 50% 50%, rgba(99,102,241,0.04) 0%, transparent 50%),
+    #0d1117;
+  background-attachment: fixed;
 }
 
 .app {

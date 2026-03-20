@@ -136,6 +136,7 @@ app.get('/', (_req, res) => {
             models: 'GET /v1/models',
             health: 'GET /health',
             log_viewer: 'GET /logs',
+            log_viewer_vue: 'GET /vuelogs',
         },
         usage: {
             claude_code: 'export ANTHROPIC_BASE_URL=http://localhost:' + config.port,
