@@ -82,6 +82,8 @@ cp config.yaml.example config.yaml
 | `logging.max_days` | 日志保留天数 | `7` |
 | `logging.persist_mode` | 日志落盘模式：`summary` 问答摘要 / `compact` 精简 / `full` 完整 | `summary` |
 | `max_auto_continue` | 截断自动续写次数 (`0`=禁用，交由客户端续写) | `0` |
+| `max_history_messages` | 历史消息条数上限，超出时删除最早消息（建议改用 `max_history_tokens`） | `-1`（不限制） |
+| `max_history_tokens` | 历史消息 token 数上限（推荐），有助于减少超出 Cursor 上下文的概率；注意 tiktoken 低估约 10~20%，建议参考实际 UI 日志调整，参考值 `120000~140000` | `130000` |
 | `sanitize_response` | 响应内容清洗开关（替换 Cursor 身份引用为 Claude） | `false` |
 | `refusal_patterns` | 自定义拒绝检测规则列表（追加到内置规则） | 不配置 |
 | `tools.passthrough` | 🆕 透传模式：跳过 few-shot 注入，原始 JSON 嵌入（Roo Code/Cline 推荐） | `false` |
@@ -251,6 +253,8 @@ AI 按此格式输出 → 我们解析并转换为标准的 Anthropic `tool_use`
 | `LOG_FILE_ENABLED` | 日志文件持久化 (`true`/`false`) |
 | `LOG_DIR` | 日志文件目录 |
 | `MAX_AUTO_CONTINUE` | 截断自动续写次数 (`0`=禁用) |
+| `MAX_HISTORY_MESSAGES` | 历史消息条数上限（`-1`=不限制） |
+| `MAX_HISTORY_TOKENS` | 历史消息 token 数上限（默认 `130000`，`-1`=不限制，参考值 `120000~140000`，tiktoken 低估约 10~20%） |
 | `SANITIZE_RESPONSE` | 响应内容清洗开关 (`true`/`false`，默认 `false`) |
 | `TOOLS_PASSTHROUGH` | 🆕 工具透传模式 (`true`/`false`，默认 `false`) |
 | `TOOLS_DISABLED` | 🆕 工具禁用模式 (`true`/`false`，默认 `false`) |

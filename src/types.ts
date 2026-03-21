@@ -91,6 +91,14 @@ export interface CursorPart {
 export interface CursorSSEEvent {
     type: string;
     delta?: string;
+    finishReason?: string;
+    messageMetadata?: {
+        usage?: {
+            inputTokens?: number;
+            outputTokens?: number;
+            totalTokens?: number;
+        };
+    };
 }
 
 // ==================== Internal Types ====================
@@ -107,7 +115,8 @@ export interface AppConfig {
     cursorModel: string;
     authTokens?: string[];  // API 鉴权 token 列表，为空则不鉴权
     maxAutoContinue: number;        // 自动续写最大次数，默认 3，设 0 禁用
-    maxHistoryMessages: number;     // 历史消息条数硬限制，默认 100，-1 不限制
+    maxHistoryMessages: number;     // 历史消息条数硬限制，默认 -1（不限制）
+    maxHistoryTokens: number;       // 历史消息 token 数上限（js-tiktoken 估算），默认 130000，-1 不限制
     vision?: {
         enabled: boolean;
         mode: 'ocr' | 'api';

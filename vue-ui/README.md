@@ -135,7 +135,8 @@ open http://localhost:3010/vuelogs
 | 基础 | `cursor_model` | 使用的 Cursor 模型 |
 | 基础 | `timeout` | 请求超时（秒） |
 | 基础 | `max_auto_continue` | 自动续写次数 |
-| 基础 | `max_history_messages` | 历史消息条数上限 |
+| 基础 | `max_history_messages` | 历史消息条数上限（建议改用 max_history_tokens） |
+| 基础 | `max_history_tokens` | 历史消息 token 数上限（推荐），参考值 120000~140000（tiktoken 与 Claude 实际 tokenizer 有差异，建议观察 UI 日志实际值后调整） |
 | 功能 | `thinking.enabled` | Thinking 模式（跟随客户端/强制关闭/强制开启） |
 | 功能 | `sanitize_response` | 响应内容清洗 |
 | 历史压缩 | `compression.*` | 压缩开关、级别、保留条数等 |

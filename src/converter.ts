@@ -24,6 +24,7 @@ import type {
     ParsedToolCall,
 } from './types.js';
 import { getConfig } from './config.js';
+import { estimateTokens } from './tokenizer.js';
 import { applyVisionInterceptor } from './vision.js';
 import { fixToolCallArguments } from './tool-fixer.js';
 import { getVisionProxyFetchOptions } from './proxy-agent.js';
@@ -672,6 +673,47 @@ I will ALWAYS use this exact \`\`\`json action\`\`\` block format for tool calls
             const toRemove = userMessages - maxHistoryMessages;
             messages.splice(fewShotOffset, toRemove);
             console.log(`[Converter] 历史消息裁剪: ${userMessages} → ${maxHistoryMessages} 条 (移除了最早的 ${toRemove} 条)`);
+        }
+    }
+
+    // ★ 历史消息 token 数硬限制（比条数限制更精准）
+    // 优先扣除系统提示和工具定义的 token 占用，剩余额度从最早消息开始整条删除
+    const maxHistoryTokens = config.maxHistoryTokens;
+    if (maxHistoryTokens >= 0) {
+        const fewShotOffset2 = hasTools ? 2 : 0;
+
+        // 估算系统提示 token 数
+        let overhead = 0;
+        if (req.system) {
+            const sysStr = typeof req.system === 'string' ? req.system : JSON.stringify(req.system);
+            overhead += estimateTokens(sysStr);
+        }
+        // 估算工具定义 token 数（压缩后约 70 tokens/工具 + 350 固定开销）
+        if (req.tools && req.tools.length > 0) {
+            overhead += req.tools.length * 70;
+            overhead += 350;
+        }
+
+        const historyBudget = Math.max(0, maxHistoryTokens - overhead);
+
+        // 从最新消息往前累加，找到超出预算的边界
+        let usedTokens = 0;
+        let keepFrom = fewShotOffset2;
+        for (let i = messages.length - 1; i >= fewShotOffset2; i--) {
+            const msgChars = messages[i].parts.reduce((s, p) => s + (p.text?.length ?? 0), 0);
+            const msgTokens = estimateTokens(messages[i].parts.map(p => p.text ?? '').join(''));
+            if (usedTokens + msgTokens > historyBudget) {
+                keepFrom = i + 1;
+                break;
+            }
+            usedTokens += msgTokens;
+            keepFrom = i;
+        }
+
+        if (keepFrom > fewShotOffset2) {
+            const removed = keepFrom - fewShotOffset2;
+            messages.splice(fewShotOffset2, removed);
+            console.log(`[Converter] token 预算裁剪: 移除最早 ${removed} 条消息，保留 ~${usedTokens} tokens (预算 ${historyBudget} tokens，系统开销 ${overhead} tokens)`);
         }
     }
 

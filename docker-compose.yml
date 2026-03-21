@@ -38,7 +38,8 @@ services:
 
       # ── 自动续写 & 历史消息限制 ──
       # - MAX_AUTO_CONTINUE=0          # 截断后自动续写次数，0=禁用(默认)
-      # - MAX_HISTORY_MESSAGES=-1      # 历史消息条数上限，-1=不限制
+      # - MAX_HISTORY_MESSAGES=-1      # 历史消息条数上限，-1=不限制（建议改用 MAX_HISTORY_TOKENS）
+      # - MAX_HISTORY_TOKENS=130000     # 历史消息 token 数上限（推荐），默认 130000，参考值 120000~140000（tiktoken 低估约 10~20%，建议观察 UI 日志实际值后调整）
 
       # ── 日志持久化 ──
       # - LOG_FILE_ENABLED=true
